@@ -144,9 +144,9 @@ commands:
                 steps:
                     - run:
                         command: |
-                            $SUDO rm -rf /usr/local/go
-                            $SUDO mkdir -p /usr/local/go
-                            $SUDO chown -R $(whoami): /usr/local/go
+                            $SUDO rm -rf /usr/local/bin/go
+                            $SUDO mkdir -p /usr/local/bin/go
+                            $SUDO chown -R $(whoami): /usr/local/bin/go
                         name: Prep cache restore
                     - restore_cache:
                         keys:
@@ -179,8 +179,8 @@ commands:
                         OSD_FAMILY="$(go env GOHOSTOS)"
                         HOSTTYPE="$(go env GOHOSTARCH)"
 
-                        $SUDO rm -rf /usr/local/go
-                        $SUDO install --owner="${USER}" -d /usr/local/go
+                        $SUDO rm -rf /usr/local/bin/go
+                        $SUDO install --owner="${USER}" -d /usr/local/bin/go
                         $SUDO rm -rf /opt/go
                       fi
 
@@ -221,7 +221,7 @@ commands:
                     - save_cache:
                         key: go-binary-<<parameters.cache-key>>-<<parameters.version>>-{{ arch }}
                         paths:
-                            - /usr/local/go
+                            - /usr/local/bin/go
     install-goreleaser:
         description: |
             Install goreleaser
