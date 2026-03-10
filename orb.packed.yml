@@ -1,0 +1,819 @@
+version: 2.1
+description: |
+    Common CircleCI tasks for the Go ( Golang ) programming language.
+display:
+    home_url: https://golang.org/
+    source_url: https://github.com/freshpaint-io/go-orb
+orbs:
+    os-detect: circleci/os-detect@0.2
+commands:
+    goreleaser-release:
+        description: |
+            Build Go applications and release them on GitHub.
+            GoReleaser CLI must be installed and a GitHub Token
+            with write:packages permissions is also required.
+        parameters:
+            github-token:
+                default: GITHUB_TOKEN
+                description: |
+                    A GitHub Token is with write:packages permissions is required.
+                type: string
+            project-path:
+                default: $HOME
+                description: |
+                    The path to the directory containing your Go project files:
+                    .goreleaser.yaml, go.mod, main.go.
+                    Defaults to $HOME.
+                type: string
+            publish-release:
+                default: false
+                description: |
+                    Set to true to publish release to GitHub
+                type: boolean
+            validate-yaml:
+                default: false
+                description: |
+                    Set to true to validate .goreleaser.yaml.
+                type: boolean
+        steps:
+            - run:
+                command: "#!/bin/bash\n\nGITHUB_TOKEN=\"$(echo \"\\$$GO_ENV_VAR_NAME_GITHUB_TOKEN\" | circleci env subst)\"\nGO_EVAL_PROJECT_PATH=\"$(eval echo \"${GO_EVAL_PROJECT_PATH}\")\"\n\n# Change to directory containing project files\ncd \"${GO_EVAL_PROJECT_PATH}\" || return\n\nif [ -z \"${GITHUB_TOKEN}\" ]; then\n    echo \"No GitHub Token provided. Please add token as environment variable in CircleCI.\"\n    exit 1\nfi\n\nif [ \"$GO_BOOL_VALIDATE_YAML\" -eq 1 ]; then \n    # Validate .goreleaser.yaml file\n    goreleaser check\nfi\n\nif [ \"$GO_BOOL_PUBLISH_RELEASE\" -eq 1 ]; then \n    # Build binaries and publish release to GitHub\n    goreleaser release \nelse\n    # Build binaries and test release locally\n    goreleaser release --snapshot --clean\nfi\n\n\n"
+                environment:
+                    GO_BOOL_PUBLISH_RELEASE: << parameters.publish-release >>
+                    GO_BOOL_VALIDATE_YAML: << parameters.validate-yaml >>
+                    GO_ENV_VAR_NAME_GITHUB_TOKEN: << parameters.github-token >>
+                    GO_EVAL_PROJECT_PATH: << parameters.project-path >>
+                name: Build and release Go Binaries to GitHub with GoReleaser
+    gotestsum:
+        description: |
+            Runs 'go test ./...' but includes extensive parameterization for finer tuning
+        parameters:
+            covermode:
+                default: atomic
+                description: mode used to count coverage
+                type: string
+            coverprofile:
+                default: cover-source.out
+                description: file to save coverage profile
+                type: string
+            junitfile:
+                default: unit-tests.xml
+                description: file to save junit format xml file
+                type: string
+            packages:
+                default: ./...
+                description: import tests to run, by path glob.
+                type: string
+            project-path:
+                default: ""
+                description: |
+                    The path to the directory containing your Go project files:
+                    .goreleaser.yaml, go.mod, main.go.
+                    Defaults to $HOME.
+                type: string
+        steps:
+            - run:
+                command: |
+                    #! /bin/bash
+
+                    if [ ! "$(which gotestsum)" ]; then
+                      echo The gotestsum command is not available in this executor.
+                      exit 1
+                    fi
+
+                    if [ -n "${ORB_EVAL_PROJECT_PATH}" ]; then
+                      cd "${ORB_EVAL_PROJECT_PATH}" || exit
+                    fi
+
+                    if [ -n "$ORB_VAL_PACKAGES" ];then
+                      set -- "$@" --packages "${ORB_VAL_PACKAGES}"
+                    fi
+
+                    if [ -n "$ORB_VAL_JUNITFILE" ];then
+                      set -- "$@" --junitfile "${ORB_VAL_JUNITFILE}"
+                    fi
+
+                    if [ -n "$ORB_VAL_COVERMODE" ];then
+                      COVERMODE="-covermode=${ORB_VAL_COVERMODE}"
+                    fi
+
+                    if [ -n "$ORB_EVAL_COVER_PROFILE" ];then
+                      INPUT_COVER_PROFILE=$(eval echo "$ORB_EVAL_COVER_PROFILE")
+                      COVER_PROFILE="-coverprofile=${INPUT_COVER_PROFILE}"
+                    fi
+
+                    set -x
+                    gotestsum \
+                      "$@" \
+                      -- \
+                      "${COVERMODE}" \
+                      "${COVER_PROFILE}" \
+                      -coverpkg="$ORB_VAL_PACKAGES"
+                    set +x
+                environment:
+                    ORB_EVAL_COVER_PROFILE: <<parameters.coverprofile>>
+                    ORB_EVAL_PROJECT_PATH: <<parameters.project-path>>
+                    ORB_VAL_COVERMODE: <<parameters.covermode>>
+                    ORB_VAL_JUNITFILE: <<parameters.junitfile>>
+                    ORB_VAL_PACKAGES: <<parameters.packages>>
+                name: gotestsum
+    install:
+        description: |
+            Install Go in a build. Supports Linux/amd64 and macOS/amd64.
+        parameters:
+            cache:
+                default: true
+                description: Whether or not to cache the binary.
+                type: boolean
+            cache-key:
+                default: v2
+                description: |
+                    String to use in cache key. Typically overridden when needed to bust cache.
+                type: string
+            version:
+                default: 1.16.5
+                description: The Go version.
+                type: string
+        steps:
+            - os-detect/init
+            - when:
+                condition:
+                    equal:
+                        - <<parameters.cache>>
+                        - true
+                steps:
+                    - run:
+                        command: |
+                            $SUDO rm -rf /usr/local/go
+                            $SUDO mkdir -p /usr/local/go
+                            $SUDO chown -R $(whoami): /usr/local/go
+                        name: Prep cache restore
+                    - restore_cache:
+                        keys:
+                            - go-binary-<<parameters.cache-key>>-<<parameters.version>>-{{ arch }}
+            - run:
+                command: |
+                    #!/usr/bin/env bash
+
+                    function alpine_install {
+                      cd /opt || exit 200
+                      apk add bash gcc musl-dev go
+                      wget "https://go.dev/dl/go${ORB_VAL_VERSION}.src.tar.gz"
+                      tar xzf "go${ORB_VAL_VERSION}.src.tar.gz"
+                      mv go "go${ORB_VAL_VERSION}"
+                      cd "go${ORB_VAL_VERSION}/src" || exit 201
+                      ./make.bash
+                      apk del go
+                      ln -sf "/opt/go${ORB_VAL_VERSION}/bin/go" /usr/local/bin/go
+                      ln -sf "/opt/go${ORB_VAL_VERSION}/bin/gofmt" /usr/local/bin/gofmt
+                    }
+
+                    function standard_install {
+                      if command -v go >/dev/null; then
+                        if go version | grep -q -F "go\<< parameters.version >> "; then
+                          echo "Binary already exists, skipping download."
+                          exit 0
+                        fi
+
+                        echo "Found a different version of Go."
+                        OSD_FAMILY="$(go env GOHOSTOS)"
+                        HOSTTYPE="$(go env GOHOSTARCH)"
+
+                        $SUDO rm -rf /usr/local/go
+                        $SUDO install --owner="${USER}" -d /usr/local/go
+                        $SUDO rm -rf /opt/go
+                      fi
+
+                      echo "Installing the requested version of Go."
+                      curl -O --fail --location -sS "https://freshpaint-cdn.com/binaries/go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz"
+                      $SUDO tar xzf "go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz" -C /opt
+                      $SUDO rm "go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz"
+                      $SUDO ln -sf /opt/go/bin/go /usr/local/bin/go
+                      $SUDO ln -sf /opt/go/bin/gofmt /usr/local/bin/gofmt
+
+                      #shellcheck disable=SC2016
+                      $SUDO chown -R "$(whoami)": /usr/local/bin/go /usr/local/bin/gofmt
+                    }
+
+                    : "${OSD_FAMILY:="linux"}"
+                    : "${HOSTTYPE:="amd64"}"
+                    if [ "${HOSTTYPE}" = "x86_64" ]; then HOSTTYPE="amd64"; fi
+                    if [ "${HOSTTYPE}" = "aarch64" ]; then HOSTTYPE="arm64"; fi
+                    case "${HOSTTYPE}" in *86) HOSTTYPE=i386 ;; esac
+
+                    if grep alpinelinux /etc/os-release; then
+                      alpine_install
+                    else
+                      standard_install
+                    fi
+                environment:
+                    ORB_VAL_VERSION: << parameters.version >>
+                name: Install Go
+            - run:
+                command: echo "Installed " && go version
+                name: Verify Go Installation
+            - when:
+                condition:
+                    equal:
+                        - <<parameters.cache>>
+                        - true
+                steps:
+                    - save_cache:
+                        key: go-binary-<<parameters.cache-key>>-<<parameters.version>>-{{ arch }}
+                        paths:
+                            - /usr/local/go
+    install-goreleaser:
+        description: |
+            Install goreleaser
+        parameters:
+            shell:
+                default: bash
+                description: |
+                    The shell to use for running the script, windows should be bash but alpine may be sh.
+                type: string
+            version:
+                default: ""
+                description: |
+                    The version of goreleaser to install. If not specified, the latest version will be installed.
+                type: string
+        steps:
+            - run:
+                command: |
+                    #!/usr/bin/env bash
+
+                    set -euo pipefail
+
+                    function alpine_install_curl() {
+                      apk add curl
+                    }
+
+                    function get_os() {
+                      local os
+                      os=$(uname -o)
+                      case "$os" in
+                        GNU/Linux) echo "Linux" ;;
+                        Linux)     echo "Linux" ;;
+                        Msys)      echo "Windows" ;;
+                        Darwin)    echo "Darwin" ;;
+                        *)         echo "Unsupported OS: $os" ; exit 1;;
+                      esac
+                    }
+
+                    function get_architecture() {
+                      local arch
+                      arch=$(uname -m)
+                      case "$arch" in
+                        aarch64) echo "arm64" ;;
+                        arm64)   echo "arm64" ;;
+                        x86_64)  echo "x86_64" ;;
+                        *)       echo "Unsupported architecture: $arch" ; exit 1;;
+                      esac
+                    }
+
+                    download_goreleaser() {
+                      echo "Downloading goreleaser for ${architecture}..."
+                      if ! which curl &>/dev/null; then
+                        echo "curl is not installed. Please install curl and try again."
+                        exit 1
+                      fi
+                      if [ -z "${GO_STR_VERSION:-}" ]; then
+                        # Taken from https://goreleaser.com/install/#bash-script
+                        GO_STR_VERSION="$(curl -sf https://goreleaser.com/static/latest)"
+                      fi
+                      URL="https://github.com/goreleaser/goreleaser/releases/download/${GO_STR_VERSION}/goreleaser_${os}_${architecture}.${file_extension}"
+                      echo "Downloading goreleaser from ${URL}"
+                      if ! curl --location "${URL}" --output "${TMP_FILE}" &>/dev/null; then
+                        echo "Failed to download goreleaser"
+                        exit 1
+                      fi
+                    }
+
+                    extract_goreleaser_win() {
+                      echo "Running on Windows, using unzip to extract..."
+                      mkdir --parent "${HOME}/go/bin"
+                      if ! unzip -n /tmp/goreleaser.zip -d "${HOME}/go/bin" goreleaser.exe; then
+                        echo "Failed to extract goreleaser"
+                        exit 1
+                      fi
+                    }
+
+                    extract_goreleaser_nix() {
+                      echo "Running on Linux, Attempting to extract to /usr/local/bin..."
+                      if ! tar -xvzf "${TMP_FILE}" -C /usr/local/bin goreleaser ; then
+                        echo "Failed to extract goreleaser to /usr/local/bin with normal privileges, trying with sudo..."
+                        if ! sudo tar -xvzf "${TMP_FILE}" -C /usr/local/bin goreleaser; then
+                          echo "Failed to extract goreleaser"
+                          exit 1
+                        fi
+                      fi
+                    }
+
+                    extract_goreleaser() {
+                      architecture="$(get_architecture)"
+                      os="$(get_os)"
+                      if [[ "${os}" == "Windows" ]]; then
+                        extract_goreleaser_win
+                      else
+                        extract_goreleaser_nix
+                      fi
+                    }
+
+                    if grep alpinelinux /etc/os-release; then
+                      if which curl; then
+                        echo curl found in alpine
+                      else
+                        echo Installing curl in alpine
+                        alpine_install_curl
+                      fi
+                    fi
+
+                    if ! which goreleaser &>/dev/null; then
+                      echo "Installing goreleaser..."
+                      architecture="$(get_architecture)"
+                      os="$(get_os)"
+                      if [[ "${os}" == "Windows" ]]; then
+                        file_extension="zip"
+                      else
+                        file_extension="tar.gz"
+                      fi
+                      TMP_FILE="/tmp/goreleaser.${file_extension}"
+                      download_goreleaser
+                      extract_goreleaser
+                    else
+                      echo "goreleaser is already installed. Exiting..."
+                      exit 0
+                    fi
+
+                    goreleaser --version
+                environment:
+                    GO_STR_VERSION: << parameters.version >>
+                name: Install goreleaser
+                shell: << parameters.shell >>
+    load-build-cache:
+        description: Load cached Go build cache.
+        parameters:
+            checksum:
+                default: '{{ checksum "go.sum" }}'
+                description: Checksum template instruction
+                type: string
+            key:
+                default: ""
+                description: User-configurable component for cache key. Useful for avoiding collisions in complex workflows.
+                type: string
+        steps:
+            - restore_cache:
+                keys:
+                    - v1-<< parameters.key >>-go-build-{{ .Environment.CIRCLE_JOB }}-{{ arch }}-<< parameters.checksum >>-{{ epoch | round "72h" }}
+    load-golangci-lint-cache:
+        description: Load cached Go build cache.
+        parameters:
+            checksum:
+                default: '{{ checksum "go.sum" }}'
+                description: Checksum template instruction
+                type: string
+            key:
+                default: ""
+                description: User-configurable component for cache key. Useful for avoiding collisions in complex workflows.
+                type: string
+        steps:
+            - restore_cache:
+                keys:
+                    - v1-<< parameters.key >>-golangci-lint-{{ .Environment.CIRCLE_JOB }}-{{ arch }}-<< parameters.checksum >>-{{ epoch | round "72h" }}
+    load-mod-cache:
+        description: Load cached Go modules.
+        parameters:
+            checksum:
+                default: '{{ checksum "go.sum" }}'
+                description: Checksum template instruction
+                type: string
+            key:
+                default: ""
+                description: User-configurable component for cache key. Useful for avoiding collisions in complex workflows.
+                type: string
+        steps:
+            - restore_cache:
+                keys:
+                    - v1-<< parameters.key >>-go-mod-{{ arch }}-<< parameters.checksum >>
+    mod-download:
+        description: Run 'go mod download'.
+        steps:
+            - run:
+                command: go mod download
+                name: go mod download
+    mod-download-cached:
+        description: Download and cache Go modules
+        steps:
+            - load-mod-cache
+            - mod-download
+            - save-mod-cache
+    save-build-cache:
+        description: Save Go build cache.
+        parameters:
+            checksum:
+                default: '{{ checksum "go.sum" }}'
+                description: Checksum template instruction
+                type: string
+            key:
+                default: ""
+                description: User-configurable component for cache key. Useful for avoiding collisions in complex workflows.
+                type: string
+            path:
+                default: ~/.cache/go-build
+                description: Path to cache.
+                type: string
+        steps:
+            - save_cache:
+                key: v1-<< parameters.key >>-go-build-{{ .Environment.CIRCLE_JOB }}-{{ arch }}-<< parameters.checksum >>-{{ epoch | round "72h" }}
+                paths:
+                    - << parameters.path >>
+    save-golangci-lint-cache:
+        description: Save golangci-lint cache.
+        parameters:
+            checksum:
+                default: '{{ checksum "go.sum" }}'
+                description: Checksum template instruction
+                type: string
+            key:
+                default: ""
+                description: User-configurable component for cache key. Useful for avoiding collisions in complex workflows.
+                type: string
+            path:
+                default: ~/.cache/golangci-lint
+                description: Path to cache.
+                type: string
+        steps:
+            - save_cache:
+                key: v1-<< parameters.key >>-golangci-lint-{{ .Environment.CIRCLE_JOB }}-{{ arch }}-<< parameters.checksum >>-{{ epoch | round "72h" }}
+                paths:
+                    - << parameters.path >>
+    save-mod-cache:
+        description: Save Go modules to cache.
+        parameters:
+            checksum:
+                default: '{{ checksum "go.sum" }}'
+                description: Checksum template instruction
+                type: string
+            key:
+                default: ""
+                description: User-configurable component for cache key. Useful for avoiding collisions in complex workflows.
+                type: string
+            path:
+                default: ~/go/pkg/mod
+                description: Path to cache.
+                type: string
+        steps:
+            - save_cache:
+                key: v1-<< parameters.key >>-go-mod-{{ arch }}-<< parameters.checksum >>
+                paths:
+                    - << parameters.path >>
+    test:
+        description: |
+            Runs 'go test ./...' but includes extensive parameterization for finer tuning
+        parameters:
+            build_ldflags:
+                default: ""
+                description: Arguments to pass on each go tool link invocation.
+                type: string
+            build_tags:
+                default: ""
+                description: A comma-separated list of additional build tags to consider satisfied during the build.
+                type: string
+            count:
+                default: "1"
+                description: run each test and benchmark n times
+                type: string
+            covermode:
+                default: set
+                description: |
+                    flag to set the coverage mode
+                    (the go default is: "set", unless -race is enabled, in which case the go default is "atomic")
+                enum:
+                    - set
+                    - count
+                    - atomic
+                type: enum
+            coverpkg:
+                default: ./...
+                description: |
+                    Apply coverage analysis in each test to packages matching the patterns.
+                    (Sets -cover.)
+                type: string
+            coverprofile:
+                default: cover-source.out
+                description: file to save coverage profile
+                type: string
+            failfast:
+                default: false
+                description: do not start new tests after the first test failure
+                type: boolean
+            no_output_timeout:
+                default: 10m
+                description: The amount of time to allow the command to run before timing out.
+                type: string
+            packages:
+                default: ./...
+                description: Import tests to run, by path glob.
+                type: string
+            parallel:
+                default: m
+                description: |
+                    The number of programs, such as build commands or
+                    test binaries, that can be run in parallel.
+                    The default is GOMAXPROCS, normally the number of CPUs available.
+                type: string
+            parallel-tests:
+                default: m
+                description: |
+                    Allow parallel execution of test functions that call t.Parallel.
+                    The value of this flag is the maximum number of tests to run
+                    simultaneously.
+                    By default, -parallel is set to the value of GOMAXPROCS.
+                type: string
+            project-path:
+                default: ""
+                description: |
+                    The path to the directory containing your Go project files:
+                    .goreleaser.yaml, go.mod, main.go.
+                    Defaults to $HOME.
+                type: string
+            race:
+                default: false
+                description: |
+                    run tests with -race option
+                    (if enabled, update covermode to be "atomic")
+                type: boolean
+            run:
+                default: ""
+                description: A regexp matching the names of the tests and examples that will be executed.
+                type: string
+            short:
+                default: false
+                description: tell long-running tests to shorten their run time
+                type: boolean
+            timeout:
+                default: 10m
+                description: timeout the test and panic after value - for situations where a test has a valid usecase to go longer than 10m
+                type: string
+            verbose:
+                default: false
+                description: log all tests as they are run. Also print all text from Log and Logf calls even if the test succeeds.
+                type: boolean
+        steps:
+            - run:
+                command: |
+                    #!/usr/bin/env bash
+                    if [ "${ORB_VAL_PARALLEL}" = "m" ] || [ "${ORB_VAL_PARALLEL_TESTS}" = "m" ]; then
+                      mkdir -p /tmp/go-orb/max_parallelism/
+                      echo  "$MAX_PARALLELISM_GO_CONTENTS" > /tmp/go-orb/max_parallelism/main.go
+                      GOMAXPROCS=$(go run /tmp/go-orb/max_parallelism/main.go)
+                      rm -rf /tmp/go-orb
+                    fi
+
+                    if [ "${ORB_VAL_PARALLEL}" = "m" ]; then
+                      ORB_VAL_PARALLEL=$GOMAXPROCS
+                    fi
+
+                    if [ "${ORB_VAL_PARALLEL_TESTS}" = "m" ]; then
+                      ORB_VAL_PARALLEL_TESTS=$GOMAXPROCS
+                    fi
+
+                    if [ -n "${ORB_EVAL_PROJECT_PATH}" ]; then
+                      cd "${ORB_EVAL_PROJECT_PATH}" || exit
+                    fi
+
+                    COVER_PROFILE=$(eval echo "$ORB_EVAL_COVER_PROFILE")
+
+                    if [ "$ORB_VAL_RACE" -eq 1 ]; then
+                      set -- "$@" -race
+                      ORB_VAL_COVER_MODE=atomic
+                    fi
+
+                    if [ "$ORB_VAL_FAILFAST" -eq 1 ]; then
+                      set -- "$@" -failfast
+                    fi
+
+                    if [ "$ORB_VAL_SHORT" -eq 1 ]; then
+                      set -- "$@" -short
+                    fi
+
+                    if [ "$ORB_VAL_VERBOSE" -eq 1 ]; then
+                      set -- "$@" -v
+                    fi
+
+                    set -x
+                    go test -count="$ORB_VAL_COUNT" -p "${ORB_VAL_PARALLEL}" \
+                        -parallel "${ORB_VAL_PARALLEL_TESTS}" \
+                        -coverprofile="$COVER_PROFILE" -covermode="$ORB_VAL_COVER_MODE" \
+                        "$ORB_VAL_PACKAGES" -coverpkg="$ORB_VAL_PACKAGES" \
+                        -timeout="$ORB_VAL_TIMEOUT" -tags="$ORB_VAL_BUILD_TAGS" \
+                        -ldflags="$ORB_VAL_BUILD_LDFLAGS" -run="$ORB_VAL_RUN" \
+                        "$@"
+                    set +x
+                environment:
+                    MAX_PARALLELISM_GO_CONTENTS: |
+                        package main
+
+                        import (
+                        	"fmt"
+                        	"runtime"
+                        )
+
+                        func MaxParallelism() int {
+                        	maxProcs := runtime.GOMAXPROCS(0)
+                        	numCPU := runtime.NumCPU()
+                        	if maxProcs < numCPU {
+                        		return maxProcs
+                        	}
+                        	return numCPU
+                        }
+
+                        func main() {
+                        	fmt.Println(MaxParallelism())
+                        }
+                    ORB_EVAL_COVER_PROFILE: <<parameters.coverprofile>>
+                    ORB_EVAL_PROJECT_PATH: <<parameters.project-path>>
+                    ORB_VAL_BUILD_LDFLAGS: <<parameters.build_ldflags>>
+                    ORB_VAL_BUILD_TAGS: <<parameters.build_tags>>
+                    ORB_VAL_COUNT: <<parameters.count>>
+                    ORB_VAL_COVER_MODE: <<parameters.covermode>>
+                    ORB_VAL_COVERPKG: <<parameters.coverpkg>>
+                    ORB_VAL_FAILFAST: <<parameters.failfast>>
+                    ORB_VAL_PACKAGES: <<parameters.packages>>
+                    ORB_VAL_PARALLEL: <<parameters.parallel>>
+                    ORB_VAL_PARALLEL_TESTS: <<parameters.parallel-tests>>
+                    ORB_VAL_RACE: <<parameters.race>>
+                    ORB_VAL_RUN: <<parameters.run>>
+                    ORB_VAL_SHORT: <<parameters.short>>
+                    ORB_VAL_TIMEOUT: <<parameters.timeout>>
+                    ORB_VAL_VERBOSE: <<parameters.verbose>>
+                name: go test
+                no_output_timeout: <<parameters.no_output_timeout>>
+    with-cache:
+        description: |
+            Runs the given steps
+        parameters:
+            build:
+                default: true
+                description: Whether to use go-build cache.
+                type: boolean
+            build-path:
+                default: ~/.cache/go-build
+                description: Location of go-build cache.
+                type: string
+            checksum:
+                default: '{{ checksum "go.sum" }}'
+                description: Checksum template instruction
+                type: string
+            golangci-lint:
+                default: false
+                description: Whether to use golangci-lint cache. Useful only in steps with linting, so defaults to false.
+                type: boolean
+            golangci-lint-path:
+                default: ~/.cache/golangci-lint
+                description: Location of golangci-lint cache.
+                type: string
+            key:
+                default: ""
+                description: User-configurable component for cache key. Useful for avoiding collisions in complex workflows.
+                type: string
+            mod:
+                default: false
+                description: |
+                    Whether to use go module cache. If most of your dependencies are public, it is faster to use the public
+                    Go module proxy, so this defaults to `false`.
+                type: boolean
+            mod-path:
+                default: ~/go/pkg/mod
+                description: Location of go module cache.
+                type: string
+            steps:
+                description: The steps to run with caching.
+                type: steps
+        steps:
+            - when:
+                condition: << parameters.build >>
+                steps:
+                    - load-build-cache:
+                        checksum: << parameters.checksum >>
+                        key: << parameters.key >>
+            - when:
+                condition: << parameters.mod >>
+                steps:
+                    - load-mod-cache:
+                        checksum: << parameters.checksum >>
+                        key: << parameters.key >>
+            - when:
+                condition: << parameters.golangci-lint >>
+                steps:
+                    - load-golangci-lint-cache:
+                        checksum: << parameters.checksum >>
+                        key: << parameters.key >>
+            - steps: << parameters.steps >>
+            - when:
+                condition: << parameters.build >>
+                steps:
+                    - save-build-cache:
+                        checksum: << parameters.checksum >>
+                        key: << parameters.key >>
+                        path: << parameters.build-path >>
+            - when:
+                condition: << parameters.mod >>
+                steps:
+                    - save-mod-cache:
+                        checksum: << parameters.key >>
+                        key: << parameters.key >>
+                        path: << parameters.mod-path >>
+            - when:
+                condition: << parameters.golangci-lint >>
+                steps:
+                    - save-golangci-lint-cache:
+                        checksum: << parameters.checksum >>
+                        key: << parameters.key >>
+                        path: << parameters.golangci-lint-path >>
+executors:
+    default:
+        description: |
+            The official CircleCI Go Docker image on Docker Hub.
+            Found here: https://hub.docker.com/r/cimg/go
+        docker:
+            - image: cimg/go:<< parameters.tag >>
+        parameters:
+            tag:
+                description: The `cimg/go` Docker image version tag.
+                type: string
+examples:
+    goreleaser-release:
+        description: |
+            Build Go applications and release them on GitHub.
+            Install GoReleaser CLI and add a GitHub Token with
+            write:packages permissions and store as environment variable.
+        usage:
+            version: "2.1"
+            orbs:
+                go: circleci/go@x.y
+            jobs:
+                go-build-release:
+                    executor:
+                        name: go/default
+                        tag: 1.20.8
+                    steps:
+                        - go/install-goreleaser
+                        - go/goreleaser-release:
+                            project-path: /path/to/Go/project
+                            publish-release: true
+                            validate-yaml: true
+            workflows:
+                main:
+                    jobs:
+                        - go-build-release
+    test:
+        description: Run go test ./... with additional (optional) parameters
+        usage:
+            version: "2.1"
+            orbs:
+                go: circleci/go@x.y
+            jobs:
+                build:
+                    executor:
+                        name: go/default
+                        tag: "1.16"
+                    steps:
+                        - checkout
+                        - go/with-cache:
+                            steps:
+                                - go/mod-download
+                                - go/test:
+                                    build_ldflags: -X 'main.Version=v1.0.0'
+                                    build_tags: integration,e2e
+                                    covermode: atomic
+                                    failfast: true
+                                    no_output_timeout: 15m
+                                    race: true
+                                    run: ^TestName$
+                                    timeout: 15m
+            workflows:
+                main:
+                    jobs:
+                        - build
+    with-cache:
+        description: Speeding up builds with the Go modules cache on CircleCI.
+        usage:
+            version: "2.1"
+            orbs:
+                go: circleci/go@x.y
+            jobs:
+                build:
+                    executor:
+                        name: go/default
+                        tag: "1.23"
+                    steps:
+                        - checkout
+                        - go/with-cache:
+                            steps:
+                                - go/mod-download
+                                - go/test
+            workflows:
+                main:
+                    jobs:
+                        - build
+
