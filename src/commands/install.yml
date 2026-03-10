@@ -23,8 +23,9 @@ steps:
         - run:
             name: "Prep cache restore"
             command: |
-              $SUDO rm -rf /usr/local/bin/go
-              $SUDO mkdir -p /usr/local/bin
+              $SUDO rm -rf /opt/go
+              $SUDO mkdir -p /opt/go
+              $SUDO chown -R $(whoami): /opt/go
         - restore_cache:
             keys:
               - go-binary-<<parameters.cache-key>>-<<parameters.version>>-{{ arch }}
@@ -43,4 +44,4 @@ steps:
         - save_cache:
             key: go-binary-<<parameters.cache-key>>-<<parameters.version>>-{{ arch }}
             paths:
-              - /usr/local/bin/go
+              - /opt/go
