@@ -18,14 +18,14 @@ steps:
   - os-detect/init
   - when:
       condition:
-        equal: [ <<parameters.cache>>, true ]
+        equal: [<<parameters.cache>>, true]
       steps:
         - run:
             name: "Prep cache restore"
             command: |
-              $SUDO rm -rf /usr/local/go
-              $SUDO mkdir -p /usr/local/go
-              $SUDO chown -R $(whoami): /usr/local/go
+              $SUDO rm -rf /usr/local/bin/go
+              $SUDO mkdir -p /usr/local/bin/go
+              $SUDO chown -R $(whoami): /usr/local/bin/go
         - restore_cache:
             keys:
               - go-binary-<<parameters.cache-key>>-<<parameters.version>>-{{ arch }}
@@ -39,9 +39,9 @@ steps:
       command: echo "Installed " && go version
   - when:
       condition:
-        equal: [ <<parameters.cache>>, true ]
+        equal: [<<parameters.cache>>, true]
       steps:
         - save_cache:
             key: go-binary-<<parameters.cache-key>>-<<parameters.version>>-{{ arch }}
             paths:
-              - /usr/local/go
+              - /usr/local/bin/go

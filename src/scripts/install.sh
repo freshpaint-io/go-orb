@@ -24,8 +24,8 @@ function standard_install {
     OSD_FAMILY="$(go env GOHOSTOS)"
     HOSTTYPE="$(go env GOHOSTARCH)"
 
-    $SUDO rm -rf /usr/local/go
-    $SUDO install --owner="${USER}" -d /usr/local/go
+    $SUDO rm -rf /usr/local/bin/go
+    $SUDO install --owner="${USER}" -d /usr/local/bin/go
     $SUDO rm -rf /opt/go
   fi
 
