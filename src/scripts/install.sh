@@ -22,10 +22,7 @@ function standard_install {
       echo "Found a different version of Go in /opt/go."
       $SUDO rm -rf /opt/go
     fi
-  fi
-
-  # Download and extract if /opt/go doesn't exist
-  if [ ! -d /opt/go ]; then
+  else
     echo "Installing the requested version of Go."
     curl -O --fail --location -sS "https://freshpaint-cdn.com/binaries/go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz"
     $SUDO tar xzf "go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz" -C /opt
