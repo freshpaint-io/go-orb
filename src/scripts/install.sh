@@ -25,7 +25,7 @@ function standard_install {
     HOSTTYPE="$(go env GOHOSTARCH)"
 
     $SUDO rm -rf /usr/local/bin/go
-    $SUDO install --owner="${USER}" -d /usr/local/bin/go
+    $SUDO mkdir -p /usr/local/bin
     $SUDO rm -rf /opt/go
   fi
 

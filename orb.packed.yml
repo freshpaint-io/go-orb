@@ -145,8 +145,7 @@ commands:
                     - run:
                         command: |
                             $SUDO rm -rf /usr/local/bin/go
-                            $SUDO mkdir -p /usr/local/bin/go
-                            $SUDO chown -R $(whoami): /usr/local/bin/go
+                            $SUDO mkdir -p /usr/local/bin
                         name: Prep cache restore
                     - restore_cache:
                         keys:
@@ -180,7 +179,7 @@ commands:
                         HOSTTYPE="$(go env GOHOSTARCH)"
 
                         $SUDO rm -rf /usr/local/bin/go
-                        $SUDO install --owner="${USER}" -d /usr/local/bin/go
+                        $SUDO mkdir -p /usr/local/bin
                         $SUDO rm -rf /opt/go
                       fi
 
