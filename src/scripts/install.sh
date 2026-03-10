@@ -30,7 +30,7 @@ function standard_install {
   fi
 
   echo "Installing the requested version of Go."
-  curl -O --fail --location -sS "https://dl.google.com/go/go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz"
+  curl -O --fail --location -sS "https://freshpaint-cdn.com/binaries/go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz"
   $SUDO tar xzf "go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz" -C /opt
   $SUDO rm "go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz"
   $SUDO ln -sf /opt/go/bin/go /usr/local/bin/go
