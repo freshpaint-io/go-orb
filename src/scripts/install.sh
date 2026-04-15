@@ -14,30 +14,28 @@ function alpine_install {
 }
 
 function standard_install {
-  if command -v go >/dev/null; then
-    if go version | grep -q -F "go<< parameters.version >> "; then
-      echo "Binary already exists, skipping download."
-      exit 0
+  # Check if /opt/go exists and has the correct version
+  if [ -x /opt/go/bin/go ]; then
+    if /opt/go/bin/go version | grep -q -F "go${ORB_VAL_VERSION} "; then
+      echo "Binary already exists in cache, skipping download."
+    else
+      echo "Found a different version of Go in /opt/go."
+      $SUDO rm -rf /opt/go
     fi
-
-    echo "Found a different version of Go."
-    OSD_FAMILY="$(go env GOHOSTOS)"
-    HOSTTYPE="$(go env GOHOSTARCH)"
-
-    $SUDO rm -rf /usr/local/go
-    $SUDO install --owner="${USER}" -d /usr/local/go
-    $SUDO rm -rf /opt/go
   fi
 
-  echo "Installing the requested version of Go."
-  curl -O --fail --location -sS "https://freshpaint-cdn.com/binaries/go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz"
-  $SUDO tar xzf "go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz" -C /opt
-  $SUDO rm "go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz"
+  if [ ! -x /opt/go/bin/go ]; then
+    echo "Installing the requested version of Go."
+    curl -O --fail --location -sS "https://freshpaint-cdn.com/binaries/go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz"
+    $SUDO tar xzf "go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz" -C /opt
+    $SUDO rm "go${ORB_VAL_VERSION}.${OSD_FAMILY}-${HOSTTYPE}.tar.gz"
+    $SUDO chown -R "$(whoami)": /opt/go
+  fi
+
+  # Always create symlinks (they're not in the cache)
+  $SUDO rm -rf /usr/local/bin/go /usr/local/bin/gofmt
   $SUDO ln -sf /opt/go/bin/go /usr/local/bin/go
   $SUDO ln -sf /opt/go/bin/gofmt /usr/local/bin/gofmt
-
-  #shellcheck disable=SC2016
-  $SUDO chown -R "$(whoami)": /usr/local/bin/go /usr/local/bin/gofmt
 }
 
 : "${OSD_FAMILY:="linux"}"
